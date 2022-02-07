@@ -1,0 +1,12 @@
+jupyter
+matplotlib
+nltk
+scikit-learn
+scipy
+seaborn
+transformers
+
+flake8
+black
+isort
+mypy

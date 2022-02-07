@@ -1,0 +1,12 @@
+version: "3"
+services:
+  amazon:
+    build: .
+    working_dir: /workspace
+    tty: true
+    volumes:
+      - ./:/workspace:cached
+    ports:
+      - "8080:8080"
+    runtime: nvidia
+    shm_size: "2gb"
