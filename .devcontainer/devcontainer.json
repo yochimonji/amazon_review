@@ -9,9 +9,16 @@
         "python.linting.enabled": true,
         "python.linting.pylintEnabled": false,
         "python.linting.flake8Enabled": true,
+        "python.linting.flake8Args": [
+            "--ignore=E402",
+            "--max-line-length=120"
+        ],
         "python.linting.lintOnSave": true,
         "python.linting.mypyEnabled": true,
         "python.formatting.provider": "black",
+        "python.formatting.blackArgs": [
+            "--line-length=120"
+        ],
         "editor.formatOnSave": true,
         "editor.codeActionsOnSave": {
             "source.organizeImports": true
