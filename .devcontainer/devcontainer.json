@@ -15,7 +15,8 @@
         "editor.formatOnSave": true,
         "editor.codeActionsOnSave": {
             "source.organizeImports": true
-        }
+        },
+        "json.format.enable": false
     },
     "extensions": [
         "ms-python.python",
