@@ -38,9 +38,9 @@ def train():
     dev_dataloader = sentence_to_loader(
         en_dev_df.review_body.values, en_dev_df.stars.values - 1, tokenizer, batch_size, shuffle=False
     )
-    # test_dataloader = sentence_to_loader(
-    #     en_test_df.review_body.values, en_test_df.stars.values - 1, tokenizer, batch_size, shuffle=False
-    # )
+    test_dataloader = sentence_to_loader(
+        en_test_df.review_body.values, en_test_df.stars.values - 1, tokenizer, batch_size, shuffle=False
+    )
 
     # BERTモデル構築
     model = BertForSequenceClassification.from_pretrained(
@@ -130,6 +130,37 @@ def train():
 
     print("\nTraining complete!")
     print(f"Total training took {format_time(time.time() - total_t0)} (h:mm:ss)")
+
+    print("\nPredicting")
+    total_test_loss = 0
+    total_test_accuracy = 0
+    total_test_f1 = 0
+    model.eval()
+
+    for step, (input_id_batch, input_mask_batch, label_batch) in tqdm(
+        enumerate(test_dataloader), total=len(test_dataloader)
+    ):
+        input_id_batch = input_id_batch.to(device).to(torch.int64)
+        input_mask_batch = input_mask_batch.to(device).to(torch.int64)
+        label_batch = label_batch.to(device).to(torch.int64)
+
+        with torch.no_grad():
+            result = model(input_id_batch, token_type_ids=None, attention_mask=input_mask_batch, labels=label_batch)
+
+        total_test_loss += result.loss.item()
+        logit_array = result.logits.detach().cpu().numpy()
+        label_array = label_batch.cpu().numpy()
+        total_test_accuracy += calc_accuracy(label_array, logit_array)
+        total_test_f1 += calc_f1(label_array, logit_array)
+
+    avg_test_loss = total_test_loss / len(test_dataloader)
+    print(f"Test Loss: {avg_test_loss:.3f}")
+
+    avg_test_accuracy = total_test_accuracy / len(test_dataloader)
+    print(f"Accuracy: {avg_test_accuracy:.3f}")
+
+    avg_test_f1 = total_test_f1 / len(test_dataloader)
+    print(f"F1: {avg_test_f1:.3f}")
 
 
 if __name__ == "__main__":
