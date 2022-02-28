@@ -1,17 +1,12 @@
 import time
 
-import torch
-from transformers import (
-    BertTokenizer,
-    BertForSequenceClassification,
-    AdamW,
-    get_linear_schedule_with_warmup,
-)
 import pandas as pd
+import torch
 from tqdm import tqdm
+from transformers import BertForSequenceClassification, BertTokenizer, get_linear_schedule_with_warmup
 
-from util.bert import sentence_to_loader
 from util import calc_accuracy, calc_f1, format_time
+from util.bert import sentence_to_loader
 
 
 def train():
@@ -25,7 +20,7 @@ def train():
 
     # データセット読み込み
     en_train_df = pd.read_json("./data/dataset_en_train.json", orient="record", lines=True)
-    en_train_df = en_train_df.sample(n=100, random_state=1)
+    en_train_df = en_train_df.sample(n=1000, random_state=1)
     en_dev_df = pd.read_json("./data/dataset_en_dev.json", orient="record", lines=True)
     en_test_df = pd.read_json("./data/dataset_en_test.json", orient="record", lines=True)
     print("Number of en_train_df:", en_train_df.shape[0])
@@ -58,7 +53,7 @@ def train():
 
     # 最適化とスケジューラー
     # 論文で推奨されているハイパーパラメータを使用
-    optimizer = AdamW(model.parameters(), lr=6e-6, eps=1e-8)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=6e-6, eps=1e-8)
     epochs = 3
     total_steps = len(train_dataloader) * epochs
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)

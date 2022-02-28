@@ -1,6 +1,6 @@
-from transformers import BertTokenizer
 import torch
-from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data import DataLoader, TensorDataset
+from transformers import BertTokenizer
 
 
 def tokenize_map(sentence, tokenizer: BertTokenizer, max_length=512):
@@ -8,13 +8,11 @@ def tokenize_map(sentence, tokenizer: BertTokenizer, max_length=512):
     attention_mask_list = []
 
     for text in sentence:
-        # tokenizer.encode_plus() は非推奨だけどとりあえず参考にしたnotebook通りに実装
-        # tokenizer() が推奨
         encoded_dict = tokenizer(
             text,
             add_special_tokens=True,
             truncation="longest_first",
-            pad_to_max_length=True,  # 非推奨 padding=True に変える
+            padding="max_length",
             max_length=max_length,
             return_attention_mask=True,
             return_tensors="pt",
