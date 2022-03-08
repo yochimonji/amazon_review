@@ -1,7 +1,8 @@
 import datetime
 
 import numpy as np
-from sklearn.metrics import f1_score, accuracy_score
+import torch
+from sklearn.metrics import accuracy_score, f1_score
 
 
 def calc_accuracy(label_list, pred_list):
@@ -24,3 +25,14 @@ def format_time(elapsed):
 
     # Format as hh:mm:ss
     return str(datetime.timedelta(seconds=elapsed_rounded))
+
+
+def init_device():
+    if torch.cuda.is_available():
+        # Tell PyTorch to use the GPU.
+        device = torch.device("cuda")
+        print(f"GPU available: {device}")
+    else:
+        device = torch.device("cpu")
+        print("No GPU available, using the CPU instead.")
+    return device
