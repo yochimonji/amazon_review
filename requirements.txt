@@ -5,6 +5,7 @@ scikit-learn
 scipy
 seaborn
 transformers
+janome
 
 flake8
 black
