@@ -8,7 +8,7 @@ from torchtext.legacy import data
 from torchtext.vocab import Vectors
 from tqdm import tqdm
 
-from util import calc_accuracy, calc_f1, init_device
+from util import calc_accuracy, calc_f1, init_device, load_params
 from util.model import MyClassifier
 from util.nlp_preprocessing import dataframe2dataset, tokenizer
 
@@ -21,20 +21,8 @@ def train():
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-    params = {
-        "is_developing": True,
-        "train_data_path": "./data/dataset_ja_train.json",
-        "dev_data_path": "./data/dataset_ja_dev.json",
-        "test_data_path": "./data/dataset_ja_test.json",
-        "use_category_list": ["home", "wireless", "jewelry"],
-        "token_max_length": 256,
-        "batch_size": 32,
-        "emb_dim": 300,
-        "criterion": "CrossEntropyLoss",
-        "lr": 1e-5,
-        "optimizer": "Adam",
-        "epochs": 10,
-    }
+    print("Loading parameters...")
+    params = load_params("config/params_domain_shift.json")
 
     device = init_device()
 

@@ -1,4 +1,7 @@
 import datetime
+import json
+import os
+import sys
 
 import numpy as np
 import torch
@@ -36,3 +39,29 @@ def init_device():
         device = torch.device("cpu")
         print("No GPU available, using the CPU instead.")
     return device
+
+
+def print_params(params, nest=0):
+    for param in params:
+        print("\t" * nest, param, end=":")
+        if type(params[param]) == dict:
+            print("{")
+            print_params(params[param], nest=nest + 1)
+            print("}\n")
+        else:
+            print("\t", params[param])
+
+
+# jsonファイルを読み込んでパラメータを設定する
+# jsonから読み込むことでpyファイルの書き換えをしなくてよいのでGitが汚れない
+def load_params(path="config/params.json"):
+    if len(sys.argv) == 2:
+        if os.path.exists(sys.argv[1]):
+            path = sys.argv[1]
+        else:
+            print("Error:指定した引数のパスにファイルが存在しません")
+            sys.exit()
+    with open(path, "r") as file:
+        params = json.load(file)
+    print_params(params)
+    return params
