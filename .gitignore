@@ -132,3 +132,4 @@ data
 notebook
 .vector_cache
 weight
+config
