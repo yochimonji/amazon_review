@@ -62,7 +62,7 @@ def train():
     dev_dataset = dataframe2dataset(dev_df, fields, columns)
     test_dataset = dataframe2dataset(test_df, fields, columns)
 
-    japanese_fasttext_vectors = Vectors(name="./weight/japanese_fasttext_vectors.vec")
+    japanese_fasttext_vectors = Vectors(name=params["vector_path"])
     text_field.build_vocab(train_dataset, vectors=japanese_fasttext_vectors, min_freq=1)
 
     train_iter = data.BucketIterator(dataset=train_dataset, batch_size=params["batch_size"], train=True)
