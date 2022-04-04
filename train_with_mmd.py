@@ -9,8 +9,8 @@ from torchtext.vocab import Vectors
 from tqdm import tqdm
 
 from util import init_device, load_params
-from util.mmd import MMD, compute_mmd, run_test
-from util.model import MLPWithMMD, MyEmbed, MyMlp
+from util.mmd import MMD, run_test
+from util.model import MLPWithMMD
 from util.nlp_preprocessing import dataframe2dataset, tokenizer
 
 
