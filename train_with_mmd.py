@@ -9,8 +9,8 @@ from torchtext.vocab import Vectors
 from tqdm import tqdm
 
 from util import init_device, load_params
-from util.mmd import MMD, run_test
-from util.model import MLPWithMMD
+from util.mmd import run_test
+from util.model import MMD, MyClassifier
 from util.nlp_preprocessing import dataframe2dataset, tokenizer
 
 
@@ -91,10 +91,11 @@ def train():
     )
 
     v_size = len(text_field.vocab.stoi)
-    model = MLPWithMMD(params["emb_dim"], v_size, params["token_max_length"], params["class_num"], text_field).to(
+    model = MyClassifier(params["emb_dim"], v_size, params["token_max_length"], params["class_num"], text_field).to(
         device
     )
     criterion = getattr(nn, params["criterion"])()
+    mmd = MMD()
     optimizer = getattr(torch.optim, params["optimizer"])(model.parameters(), lr=params["lr"])
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
 
@@ -102,7 +103,10 @@ def train():
 
     for epoch in range(params["epochs"]):
         print(f"\nepoch {epoch+1} / {params['epochs']}")
-        total_loss = 0
+        total_source_loss = 0
+        total_target_loss = 0
+        total_mmd_loss = 0
+        total_all_loss = 0
 
         random.seed(epoch)
         train_source_subset, _ = train_source_dataset.split(split_ratio=split_ratio)
@@ -123,25 +127,36 @@ def train():
 
             source_embed, source_pred = model(source_x)
             source_loss = criterion(source_pred, source_y)
+            total_source_loss += source_loss.cpu()
 
             target_embed, target_pred = model(target_x)
             target_loss = criterion(target_pred, target_y)
+            total_target_loss += target_loss.cpu()
 
             if params["lambda"] == 0:
                 all_loss = source_loss + target_loss
                 all_loss.backward()
-                # print(source_loss.cpu().item(), target_loss.cpu().item(), all_loss.cpu().item())
             else:
-                mmd_loss = MMD(source_embed, target_embed, "multiscale", device)
+                mmd_loss = mmd(source_embed, target_embed, "multiscale", device)
+                total_mmd_loss = mmd_loss.cpu()
                 all_loss = source_loss + target_loss + params["lambda"] * mmd_loss
                 all_loss.backward()
-                # print(source_loss.cpu().item(), target_loss.cpu().item(), mmd_loss.cpu().item(), all_loss.cpu().item())
 
             optimizer.step()
-            total_loss += all_loss.cpu()
+            total_all_loss += all_loss.cpu()
 
         scheduler.step()
-        print(f"Train Loss: {total_loss / (len(train_source_iter) + len(train_target_iter)):.3f}")
+
+        mean_source_loss = total_source_loss / len(train_source_iter)
+        mean_target_loss = total_target_loss / len(train_target_iter)
+        mean_all_loss = total_all_loss / len(train_source_iter)
+        if params["lambda"] == 0:
+            print(f"Loss -> Source: {mean_source_loss:.3f}\tTarget: {mean_target_loss:.3f}\tAll: {mean_all_loss:.3f}")
+        else:
+            mean_mmd_loss = total_mmd_loss / len(train_source_iter)
+            print(
+                f"Loss -> Source: {mean_source_loss:.3f}\tTarget: {mean_target_loss:.3f}\tMMD: {mean_mmd_loss:.3f}\tAll: {mean_all_loss:.3f}"
+            )
 
         dev_source_accuracy, dev_source_f1 = run_test(model, dev_source_iter, device)
         print(f"\nDev source Accuracy: {dev_source_accuracy:.2f}")
