@@ -8,9 +8,9 @@ from torchtext.legacy import data
 from torchtext.vocab import Vectors
 from tqdm import tqdm
 
-from util import calc_accuracy, calc_f1, init_device, load_params
-from util.mmd import compute_mmd, run_test
-from util.model import MyEmbed, MyMlp
+from util import init_device, load_params
+from util.mmd import MMD, compute_mmd, run_test
+from util.model import MLPWithMMD, MyEmbed, MyMlp
 from util.nlp_preprocessing import dataframe2dataset, tokenizer
 
 
@@ -91,13 +91,12 @@ def train():
     )
 
     v_size = len(text_field.vocab.stoi)
-    embed = MyEmbed(params["emb_dim"], v_size, text_field).to(device)
-    classifier = MyMlp(params["emb_dim"], params["token_max_length"], params["class_num"]).to(device)
+    model = MLPWithMMD(params["emb_dim"], v_size, params["token_max_length"], params["class_num"], text_field).to(
+        device
+    )
     criterion = getattr(nn, params["criterion"])()
-    optimizer_embed = getattr(torch.optim, params["optimizer"])(embed.parameters(), lr=params["lr"])
-    optimizer_classifier = getattr(torch.optim, params["optimizer"])(classifier.parameters(), lr=params["lr"])
-    scheduler_embed = torch.optim.lr_scheduler.ExponentialLR(optimizer_embed, gamma=0.9)
-    scheduler_classifier = torch.optim.lr_scheduler.ExponentialLR(optimizer_classifier, gamma=0.9)
+    optimizer = getattr(torch.optim, params["optimizer"])(model.parameters(), lr=params["lr"])
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
 
     split_ratio = len(train_target_dataset) / len(train_source_dataset)
 
@@ -114,42 +113,47 @@ def train():
         for i, (source_batch, target_batch) in tqdm(
             enumerate(zip(train_source_iter, train_target_iter)), total=len(train_source_iter)
         ):
-            embed.train()
-            classifier.train()
-            optimizer_embed.zero_grad()
+            model.train()
+            optimizer.zero_grad()
             source_x, source_y = source_batch.text[0].to(device), (source_batch.label - 1).to(device)
             target_x, target_y = target_batch.text[0].to(device), (target_batch.label - 1).to(device)
 
-            source_embed = embed(source_x)
-            source_pred = classifier(source_embed)
+            if source_x.shape[0] != params["batch_size"] or target_x.shape[0] != params["batch_size"]:
+                continue
+
+            source_embed, source_pred = model(source_x)
             source_loss = criterion(source_pred, source_y)
-            source_loss.backward()
 
-            target_embed = embed(target_x)
-            target_pred = classifier(target_embed)
+            target_embed, target_pred = model(target_x)
             target_loss = criterion(target_pred, target_y)
-            target_loss.backward()
 
-            all_loss = source_loss + target_loss
-            optimizer_embed.step()
-            optimizer_classifier.step()
+            if params["lambda"] == 0:
+                all_loss = source_loss + target_loss
+                all_loss.backward()
+                # print(source_loss.cpu().item(), target_loss.cpu().item(), all_loss.cpu().item())
+            else:
+                mmd_loss = MMD(source_embed, target_embed, "multiscale", device)
+                all_loss = source_loss + target_loss + params["lambda"] * mmd_loss
+                all_loss.backward()
+                # print(source_loss.cpu().item(), target_loss.cpu().item(), mmd_loss.cpu().item(), all_loss.cpu().item())
+
+            optimizer.step()
             total_loss += all_loss.cpu()
 
-        scheduler_embed.step()
-        scheduler_classifier.step()
+        scheduler.step()
         print(f"Train Loss: {total_loss / (len(train_source_iter) + len(train_target_iter)):.3f}")
 
-        dev_source_accuracy, dev_source_f1 = run_test(embed, classifier, dev_source_iter, device)
+        dev_source_accuracy, dev_source_f1 = run_test(model, dev_source_iter, device)
         print(f"\nDev source Accuracy: {dev_source_accuracy:.2f}")
         print(f"Dev source F1 Score: {dev_source_f1:.2f}")
-        dev_target_accuracy, dev_target_f1 = run_test(embed, classifier, dev_target_iter, device)
+        dev_target_accuracy, dev_target_f1 = run_test(model, dev_target_iter, device)
         print(f"\nDev target Accuracy: {dev_target_accuracy:.2f}")
         print(f"Dev target F1 Score: {dev_target_f1:.2f}")
 
-    test_source_accuracy, test_source_f1 = run_test(embed, classifier, test_source_iter, device)
+    test_source_accuracy, test_source_f1 = run_test(model, test_source_iter, device)
     print(f"\nTest source Accuracy: {test_source_accuracy:.2f}")
     print(f"Test source F1 Score: {test_source_f1:.2f}")
-    test_target_accuracy, test_target_f1 = run_test(embed, classifier, test_target_iter, device)
+    test_target_accuracy, test_target_f1 = run_test(model, test_target_iter, device)
     print(f"\nTest target Accuracy: {test_target_accuracy:.2f}")
     print(f"Test target F1 Score: {test_target_f1:.2f}")
 
