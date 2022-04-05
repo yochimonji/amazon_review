@@ -86,7 +86,7 @@ def train():
             model.train()
             optimizer.zero_grad()
             x, y = batch.text[0].to(device), batch.label.to(device)
-            pred = model(x)
+            _, pred = model(x)
             loss = criterion(pred, y)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
@@ -101,7 +101,7 @@ def train():
         for valid_batch in dev_iter:
             x, y = valid_batch.text[0].to(device), valid_batch.label.to(device)
             with torch.no_grad():
-                pred = model(x)
+                _, pred = model(x)
             label_array = y.cpu().numpy()
             logit_array = pred.cpu().numpy()
             total_dev_accuracy += calc_accuracy(label_array, logit_array)
@@ -115,7 +115,7 @@ def train():
     for test_batch in test_iter:
         x, y = test_batch.text[0].to(device), test_batch.label.to(device)
         with torch.no_grad():
-            pred = model(x)
+            _, pred = model(x)
 
         label_array = y.cpu().numpy()
         logit_array = pred.cpu().numpy()
