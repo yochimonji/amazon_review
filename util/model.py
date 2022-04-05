@@ -3,10 +3,11 @@ from torch import nn
 
 
 class MyClassifier(nn.Module):
-    def __init__(self, emb_dim, v_size, max_length, class_num, text_field):
+    def __init__(self, emb_dim, v_size, max_length, class_num, text_field=None):
         super().__init__()
         self.embed = nn.Embedding(v_size, emb_dim)
-        self.embed.weight.data.copy_(text_field.vocab.vectors)
+        if text_field:
+            self.embed.weight.data.copy_(text_field.vocab.vectors)
         self.linear = nn.Linear(emb_dim * max_length, 508)
         self.mlp = nn.Sequential(
             nn.Linear(508, 256),

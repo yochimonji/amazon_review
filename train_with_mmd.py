@@ -72,8 +72,11 @@ def train():
     dev_target_dataset = dataframe2dataset(dev_target_df, fields, columns)
     test_target_dataset = dataframe2dataset(test_target_df, fields, columns)
 
-    japanese_fasttext_vectors = Vectors(name=params["vector_path"])
-    text_field.build_vocab(train_source_dataset, vectors=japanese_fasttext_vectors, min_freq=1)
+    if params["use_pretrained_vector"]:
+        japanese_fasttext_vectors = Vectors(name=params["vector_path"])
+        text_field.build_vocab(train_source_dataset, vectors=japanese_fasttext_vectors, min_freq=1)
+    else:
+        text_field.build_vocab(train_source_dataset, min_freq=1)
 
     # train_source_iterのみエポックごとに生成し直す
     dev_source_iter = data.BucketIterator(
@@ -91,9 +94,12 @@ def train():
     )
 
     v_size = len(text_field.vocab.stoi)
-    model = MyClassifier(params["emb_dim"], v_size, params["token_max_length"], params["class_num"], text_field).to(
-        device
-    )
+    if params["use_pretrained_vector"]:
+        model = MyClassifier(params["emb_dim"], v_size, params["token_max_length"], params["class_num"], text_field).to(
+            device
+        )
+    else:
+        model = MyClassifier(params["emb_dim"], v_size, params["token_max_length"], params["class_num"]).to(device)
     criterion = getattr(nn, params["criterion"])()
     mmd = MMD()
     optimizer = getattr(torch.optim, params["optimizer"])(model.parameters(), lr=params["lr"])
