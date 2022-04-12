@@ -23,7 +23,7 @@ def train():
     torch.backends.cudnn.deterministic = True
 
     print("Loading parameters...")
-    params = load_params("config/params_mmd.json")
+    params = load_params("/workspace/amazon_review/config/params_mmd.json")
 
     device = init_device()
 

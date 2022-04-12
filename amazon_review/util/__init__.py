@@ -54,7 +54,7 @@ def print_params(params, nest=0):
 
 # jsonファイルを読み込んでパラメータを設定する
 # jsonから読み込むことでpyファイルの書き換えをしなくてよいのでGitが汚れない
-def load_params(path="config/params.json"):
+def load_params(path="/amazon_review/config/params.json"):
     if len(sys.argv) == 2:
         if os.path.exists(sys.argv[1]):
             path = sys.argv[1]
