@@ -143,7 +143,7 @@ def train():
                 all_loss = source_loss + target_loss
                 all_loss.backward()
             else:
-                mmd_loss = mmd(source_embed, target_embed, "multiscale", device)
+                mmd_loss = mmd(source_embed, target_embed, "multiscale")
                 total_mmd_loss = mmd_loss.cpu()
                 all_loss = source_loss + target_loss + params["lambda"] * mmd_loss
                 all_loss.backward()
