@@ -12,3 +12,4 @@ black
 isort
 mypy
 pytest
+pytest-cov
