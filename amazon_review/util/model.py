@@ -37,10 +37,14 @@ class MyClassifier(nn.Module):
 
 
 class MMD(nn.Module):
-    def __init__(self):
-        super().__init__()
+    # kernel: Literal["multiscale", "rbf"]
+    kernel: str
 
-    def forward(self, x: Tensor, y: Tensor, kernel: str) -> Tensor:
+    def __init__(self, kernel: str = "multiscale") -> None:
+        super().__init__()
+        self.kernel = kernel
+
+    def forward(self, x: Tensor, y: Tensor) -> Tensor:
         """Emprical maximum mean discrepancy. The lower the result
         the more evidence that distributions are the same.
 
@@ -64,16 +68,14 @@ class MMD(nn.Module):
             torch.zeros(xx.shape).to(device),
         )
 
-        if kernel == "multiscale":
-
+        if self.kernel == "multiscale":
             bandwidth_range = [0.2, 0.5, 0.9, 1.3]
             for a in bandwidth_range:
                 XX += a**2 * (a**2 + dxx) ** -1
                 YY += a**2 * (a**2 + dyy) ** -1
                 XY += a**2 * (a**2 + dxy) ** -1
 
-        if kernel == "rbf":
-
+        elif self.kernel == "rbf":
             bandwidth_range = [10, 15, 20, 50]
             for a in bandwidth_range:
                 XX += torch.exp(-0.5 * dxx / a)

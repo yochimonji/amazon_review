@@ -1,6 +1,6 @@
 import pandas as pd
 import torch
-from amazon_review.util.model import MyClassifier
+from amazon_review.util.model import MMD, MyClassifier
 from amazon_review.util.nlp_preprocessing import dataframe2dataset, tokenizer
 from torchtext.legacy import data
 from torchtext.vocab import Vectors
@@ -56,4 +56,36 @@ def test_myclassifier_2() -> None:
     actual = (torch.zeros(batch_size, 508).size(), torch.zeros(batch_size, class_num).size())
     embedding, output = model(input)
     predicted = (embedding.size(), output.size())
+    assert actual == predicted
+
+
+def test_mmd_multiscale_output_size():
+    batch_size = 24
+    input = torch.rand(batch_size, 508)
+    actual = MMD("multiscale").forward(input, input).size()
+    predicted = torch.rand(1).mean().size()
+    assert actual == predicted
+
+
+def test_mmd_rbf_output_size():
+    batch_size = 24
+    input = torch.rand(batch_size, 508)
+    actual = MMD("rbf").forward(input, input).size()
+    predicted = torch.rand(1).mean().size()
+    assert actual == predicted
+
+
+def test_mmd_rbf_output_value_1():
+    batch_size = 24
+    input = torch.rand(batch_size, 508)
+    actual = MMD("rbf").forward(input, input)
+    predicted = torch.tensor(0)
+    assert actual == predicted
+
+
+def test_rbf_output_value_2():
+    input_1 = torch.tensor([[-0.1, 0.0, 0.1], [0.2, 0.3, 0.4]])
+    input_2 = torch.tensor([[-0.4, -0.3, -0.2], [-0.1, 0.0, 0.1]])
+    actual = MMD("rbf").forward(input_1, input_2)
+    predicted = torch.tensor(0)
     assert actual == predicted
