@@ -7,10 +7,14 @@ seaborn
 transformers
 janome
 shap
+mecab-python3
+unidic-lite
+japanize-matplotlib
+lightgbm
 
 pytest
 pytest-cov
 flake8
 black
 isort
-mypyx
+mypy
