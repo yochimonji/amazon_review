@@ -27,11 +27,11 @@ def train():
     device = init_device()
 
     # データセット読み込み
-    ja_train_df = pd.read_json(params["train_data_path"], orient="record", lines=True)
+    ja_train_df = pd.read_json(params["ja_train_path"], orient="record", lines=True)
     if params["is_developing"]:
         ja_train_df = ja_train_df.sample(n=10000, random_state=1)
-    ja_dev_df = pd.read_json(params["dev_data_path"], orient="record", lines=True)
-    ja_test_df = pd.read_json(params["test_data_path"], orient="record", lines=True)
+    ja_dev_df = pd.read_json(params["ja_dev_path"], orient="record", lines=True)
+    ja_test_df = pd.read_json(params["ja_test_path"], orient="record", lines=True)
 
     train_df = ja_train_df[ja_train_df["product_category"].isin(params["use_category_list"])]
     dev_df = ja_dev_df[ja_dev_df["product_category"].isin(params["use_category_list"])]
@@ -62,7 +62,7 @@ def train():
     dev_dataset = dataframe2dataset(dev_df, fields, columns)
     test_dataset = dataframe2dataset(test_df, fields, columns)
 
-    japanese_fasttext_vectors = Vectors(name=params["vector_path"])
+    japanese_fasttext_vectors = Vectors(name=params["ja_vector_path"])
     text_field.build_vocab(train_dataset, vectors=japanese_fasttext_vectors, min_freq=1)
 
     train_iter = data.BucketIterator(dataset=train_dataset, batch_size=params["batch_size"], train=True)

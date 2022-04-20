@@ -28,11 +28,11 @@ def train():
     device = init_device()
 
     # データセット読み込み
-    train_df = pd.read_json(params["train_data_path"], orient="record", lines=True)
+    train_df = pd.read_json(params["ja_train_path"], orient="record", lines=True)
     if params["is_developing"]:
         train_df = train_df.sample(n=5000, random_state=1)
-    dev_df = pd.read_json(params["dev_data_path"], orient="record", lines=True)
-    test_df = pd.read_json(params["test_data_path"], orient="record", lines=True)
+    dev_df = pd.read_json(params["ja_dev_path"], orient="record", lines=True)
+    test_df = pd.read_json(params["ja_test_path"], orient="record", lines=True)
 
     train_source_df = train_df[train_df["product_category"] == params["source_category"]]
     dev_source_df = dev_df[dev_df["product_category"] == params["source_category"]]
@@ -73,7 +73,7 @@ def train():
     test_target_dataset = dataframe2dataset(test_target_df, fields, columns)
 
     if params["use_pretrained_vector"]:
-        japanese_fasttext_vectors = Vectors(name=params["vector_path"])
+        japanese_fasttext_vectors = Vectors(name=params["ja_vector_path"])
         text_field.build_vocab(train_source_dataset, vectors=japanese_fasttext_vectors, min_freq=1)
     else:
         text_field.build_vocab(train_source_dataset, min_freq=1)
@@ -101,7 +101,7 @@ def train():
     else:
         model = MyClassifier(params["emb_dim"], v_size, params["token_max_length"], params["class_num"]).to(device)
     criterion = getattr(nn, params["criterion"])()
-    mmd = MMD()
+    mmd = MMD("rbf")
     optimizer = getattr(torch.optim, params["optimizer"])(model.parameters(), lr=params["lr"])
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
 
@@ -143,7 +143,7 @@ def train():
                 all_loss = source_loss + target_loss
                 all_loss.backward()
             else:
-                mmd_loss = mmd(source_embed, target_embed, "multiscale")
+                mmd_loss = mmd(source_embed, target_embed)
                 total_mmd_loss = mmd_loss.cpu()
                 all_loss = source_loss + target_loss + params["lambda"] * mmd_loss
                 all_loss.backward()

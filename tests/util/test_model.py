@@ -27,7 +27,7 @@ def test_myclassifier_2() -> None:
     max_length = 256
     class_num = 5
     data_path = "/workspace/data/dataset_ja_train.json"
-    vector_path = "/workspace/amazon_review/weight/japanese_fasttext_vectors.vec"
+    ja_vector_path = "/workspace/amazon_review/weight/japanese_fasttext_vectors.vec"
     category = "home"
 
     text_field = data.Field(
@@ -47,7 +47,7 @@ def test_myclassifier_2() -> None:
     df = df[df["product_category"] == category]
     columns = ["review_body", "stars"]
     dataset = dataframe2dataset(df, fields, columns)
-    japanese_fasttext_vectors = Vectors(name=vector_path)
+    japanese_fasttext_vectors = Vectors(name=ja_vector_path)
     text_field.build_vocab(dataset, vectors=japanese_fasttext_vectors, min_freq=1)
     v_size = len(text_field.vocab.stoi)
 
