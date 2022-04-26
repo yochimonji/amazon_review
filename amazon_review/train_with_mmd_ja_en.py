@@ -137,6 +137,8 @@ def main():
         total_mmd_loss = 0
         total_all_loss = 0
 
+        # MMDのためにターゲットと同数のソースが必要なためエポックごとにソースのデータローダーを作成し直す
+        # エポックごとに異なるソースのデータが使用されるようになる
         random.seed(epoch)
         train_source_subset, _ = train_source_dataset.split(split_ratio=split_ratio)
         train_source_iter = data.BucketIterator(
@@ -153,6 +155,8 @@ def main():
             source_x, source_y = source_batch.text[0].to(device), (source_batch.label).to(device)
             target_x, target_y = target_batch.text[0].to(device), (target_batch.label).to(device)
 
+            # MMDの処理はBatch数が同数でなけらばならないためcontinueする
+            # sourceとtargetで毎回同じBatch数だけデータがロードされる処理ができれば下の処理は不要
             if source_x.shape[0] != params["batch_size"] or target_x.shape[0] != params["batch_size"]:
                 continue
 
