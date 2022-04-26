@@ -11,7 +11,7 @@ from tqdm import tqdm
 from util import init_device, load_params
 from util.mmd import run_test
 from util.model import MMD, MyClassifier
-from util.nlp_preprocessing import dataframe2dataset, tokenizer
+from util.nlp_preprocessing import dataframe2dataset, tokenizer_ja
 
 
 def train():
@@ -52,7 +52,7 @@ def train():
     print("Building data iterator...")
     text_field = data.Field(
         sequential=True,
-        tokenize=tokenizer,
+        tokenize=tokenizer_ja,
         use_vocab=True,
         lower=True,
         include_lengths=True,
@@ -125,8 +125,8 @@ def train():
         ):
             model.train()
             optimizer.zero_grad()
-            source_x, source_y = source_batch.text[0].to(device), (source_batch.label - 1).to(device)
-            target_x, target_y = target_batch.text[0].to(device), (target_batch.label - 1).to(device)
+            source_x, source_y = source_batch.text[0].to(device), (source_batch.label).to(device)
+            target_x, target_y = target_batch.text[0].to(device), (target_batch.label).to(device)
 
             if source_x.shape[0] != params["batch_size"] or target_x.shape[0] != params["batch_size"]:
                 continue
@@ -161,7 +161,7 @@ def train():
         else:
             mean_mmd_loss = total_mmd_loss / len(train_source_iter)
             print(
-                f"Loss -> Source: {mean_source_loss:.3f}\tTarget: {mean_target_loss:.3f}\tMMD: {mean_mmd_loss:.3f}\tAll: {mean_all_loss:.3f}"
+                f"Loss -> Source: {mean_source_loss:.3f}\tTarget: {mean_target_loss:.3f}\tMMD: {mean_mmd_loss:.3f}\tAll: {mean_all_loss:.3f}"  # noqa #E501
             )
 
         dev_source_accuracy, dev_source_f1 = run_test(model, dev_source_iter, device)
