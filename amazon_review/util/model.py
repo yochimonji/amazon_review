@@ -4,8 +4,6 @@ import torch
 from torch import Tensor, nn
 from torchtext.legacy.data import Field
 
-from .activation import Tanh
-
 
 class MyClassifier(nn.Module):
     def __init__(self, emb_dim: int, v_size: int, max_length: int, class_num: int, text_field: Field = None):
@@ -17,13 +15,13 @@ class MyClassifier(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(508, 256),
             nn.BatchNorm1d(256),
-            Tanh(),
+            nn.Tanh(),
             nn.Linear(256, 128),
             nn.BatchNorm1d(128),
-            Tanh(),
+            nn.Tanh(),
             nn.Linear(128, 64),
             nn.BatchNorm1d(64),
-            Tanh(),
+            nn.Tanh(),
             nn.Dropout(0.25),
             nn.Linear(64, class_num),
         )
@@ -34,6 +32,41 @@ class MyClassifier(nn.Module):
         embedding = cast(Tensor, self.linear(embedding))
         output = cast(Tensor, self.mlp(embedding))
         return embedding, output
+
+
+class MyEmbedding(nn.Module):
+    def __init__(self, emb_dim: int, v_size: int, max_length: int):
+        super().__init__()
+        self.embed = nn.Embedding(v_size, emb_dim)
+        self.linear = nn.Linear(emb_dim * max_length, 508)
+
+    def forward(self, sentence):
+        embedding = self.embed(sentence)
+        embedding = embedding.view(embedding.shape[0], -1)
+        embedding = self.linear(embedding)
+        return embedding
+
+
+class MyMLP(nn.Module):
+    def __init__(self, class_num: int):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(508, 256),
+            nn.BatchNorm1d(256),
+            nn.Tanh(),
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.Tanh(),
+            nn.Linear(128, 64),
+            nn.BatchNorm1d(64),
+            nn.Tanh(),
+            nn.Dropout(0.25),
+            nn.Linear(64, class_num),
+        )
+
+    def forward(self, x):
+        out = self.mlp(x)
+        return out
 
 
 class MMD(nn.Module):

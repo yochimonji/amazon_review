@@ -4,14 +4,17 @@ from torchtext.legacy import data
 from util import calc_accuracy, calc_f1
 
 
-def run_test(model: torch.nn.Module, iter: data.BucketIterator, device: torch.device):
+def run_test(embedding: torch.nn.Module, mlp: torch.nn.Module, iter: data.BucketIterator, device: torch.device):
     total_accuracy = 0
     total_f1 = 0
-    model.eval()
+    embedding.eval()
+    mlp.eval()
+
     for batch in iter:
         x, y = batch.text[0].to(device), (batch.label - 1).to(device)
         with torch.no_grad():
-            _, pred = model(x)
+            embed = embedding(x)
+            pred = mlp(embed)
 
         label_array = y.cpu().numpy()
         logit_array = pred.cpu().numpy()
