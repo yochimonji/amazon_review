@@ -35,9 +35,11 @@ class MyClassifier(nn.Module):
 
 
 class MyEmbedding(nn.Module):
-    def __init__(self, emb_dim: int, v_size: int, max_length: int):
+    def __init__(self, emb_dim: int, v_size: int, max_length: int, text_field: Field = None):
         super().__init__()
         self.embed = nn.Embedding(v_size, emb_dim)
+        if text_field:
+            self.embed.weight.data.copy_(text_field.vocab.vectors)
         self.linear = nn.Linear(emb_dim * max_length, 508)
 
     def forward(self, sentence):
