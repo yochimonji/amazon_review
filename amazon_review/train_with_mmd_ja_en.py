@@ -176,7 +176,7 @@ def main():
                 all_loss = source_loss + target_loss
             else:
                 mmd_loss = mmd(source_embed, target_embed)
-                total_mmd_loss = mmd_loss.cpu()
+                total_mmd_loss += mmd_loss.cpu()
                 all_loss = source_loss + target_loss + params["lambda"] * mmd_loss
 
             optimizer_s_emb.zero_grad()
