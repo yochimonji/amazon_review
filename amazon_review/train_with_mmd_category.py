@@ -18,6 +18,7 @@ from util.nlp_preprocessing import dataframe2dataset, tokenizer_ja
 
 
 def train():
+    # ランダムシード初期化
     seed = 0
     random.seed(seed)
     np.random.seed(seed)
@@ -26,6 +27,7 @@ def train():
     torch.backends.cudnn.deterministic = True
     device = init_device()
 
+    # パラメータ読み込み
     print("Loading parameters...")
     params = load_params("/workspace/amazon_review/config/params_mmd.json")
 
