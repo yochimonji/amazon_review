@@ -52,9 +52,11 @@ def main():
         # 3以上かを予測する場合
         df["class"] = 0
         df["class"][df["stars"] > 3] = 1
+        params["class_num"] = 2
 
         # 5クラス分類する場合
         # df["class"] = df["stars"] - 1
+        # params["class_num"] = 5
 
     # フィールド作成
     print("Building data iterator...")
@@ -81,24 +83,24 @@ def main():
         eos_token="<eos>",
     )
     label_field = data.Field(sequential=False, use_vocab=False)
-    ja_fields = [("text", source_text_field), ("label", label_field)]
-    en_fields = [("text", target_text_field), ("label", label_field)]
+    source_fields = [("text", source_text_field), ("label", label_field)]
+    target_fields = [("text", target_text_field), ("label", label_field)]
 
     # データセット作成
     columns = ["review_body", "class"]
-    train_source_dataset = dataframe2dataset(train_source_df, ja_fields, columns)
-    dev_source_dataset = dataframe2dataset(dev_source_df, ja_fields, columns)
-    test_source_dataset = dataframe2dataset(test_source_df, ja_fields, columns)
-    train_target_dataset = dataframe2dataset(train_target_df, en_fields, columns)
-    dev_target_dataset = dataframe2dataset(dev_target_df, en_fields, columns)
-    test_target_dataset = dataframe2dataset(test_target_df, en_fields, columns)
+    train_source_dataset = dataframe2dataset(train_source_df, source_fields, columns)
+    dev_source_dataset = dataframe2dataset(dev_source_df, source_fields, columns)
+    test_source_dataset = dataframe2dataset(test_source_df, source_fields, columns)
+    train_target_dataset = dataframe2dataset(train_target_df, target_fields, columns)
+    dev_target_dataset = dataframe2dataset(dev_target_df, target_fields, columns)
+    test_target_dataset = dataframe2dataset(test_target_df, target_fields, columns)
 
     # embedding作成
     source_text_field.build_vocab(train_source_dataset, min_freq=1)
     target_text_field.build_vocab(train_target_dataset, min_freq=1)
 
     # データローダー
-    # train_source_iter = data.BucketIterator(dataset=train_source_dataset, batch_size=params["batch_size"], train=True)
+    # train_source_iterのみエポックごとに生成し直す
     dev_source_iter = data.BucketIterator(
         dataset=dev_source_dataset, batch_size=params["batch_size"], train=False, sort=False
     )
@@ -114,10 +116,10 @@ def main():
     )
 
     # モデル構築
-    ja_v_size = len(source_text_field.vocab.stoi)
-    en_v_size = len(target_text_field.vocab.stoi)
-    source_embedding = MyEmbedding(params["emb_dim"], ja_v_size, params["token_max_length"]).to(device)
-    target_embedding = MyEmbedding(params["emb_dim"], en_v_size, params["token_max_length"]).to(device)
+    source_v_size = len(source_text_field.vocab.stoi)
+    target_v_size = len(target_text_field.vocab.stoi)
+    source_embedding = MyEmbedding(params["emb_dim"], source_v_size, params["token_max_length"]).to(device)
+    target_embedding = MyEmbedding(params["emb_dim"], target_v_size, params["token_max_length"]).to(device)
     mlp = MyMLP(class_num=params["class_num"]).to(device)
     criterion = getattr(nn, params["criterion"])()
     mmd = MMD("rbf")
