@@ -34,7 +34,7 @@ def train():
     # データセット読み込み
     train_df = pd.read_json(params["ja_train_path"], orient="record", lines=True)
     if params["is_developing"]:
-        train_df = train_df.sample(n=10000, random_state=1)
+        train_df = train_df.sample(n=200000, random_state=1)
     dev_df = pd.read_json(params["ja_dev_path"], orient="record", lines=True)
     test_df = pd.read_json(params["ja_test_path"], orient="record", lines=True)
 
