@@ -1,11 +1,10 @@
+import copy
 import random
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.decomposition import PCA
-from sklearn.metrics import confusion_matrix
+from scipy import stats
 from torch import nn
 from torchtext.legacy import data
 from torchtext.vocab import Vectors
@@ -45,14 +44,13 @@ def main():
     dev_target_df = dev_df[dev_df["product_category"] == params["target_category"]]
     test_target_df = test_df[test_df["product_category"] == params["target_category"]]
 
-    # target_ratioで指定した比率までtargetのデータ数を減らす
+    # target_ratioで減らした際のsourceとtargetの数
     source_num = train_source_df.shape[0]
     target_num = int(source_num * params["target_ratio"])
     if target_num > train_target_df.shape[0]:
         print("Target ratio is too large.")
         exit()
-    train_target_df = train_target_df.sample(target_num, replace=False)
-    print(f"Source num: {train_source_df.shape[0]}, Target num: {train_target_df.shape[0]}")
+    print(f"Source num: {source_num}, Target num: {target_num}")
 
     # クラスラベル設定
     for df in [train_source_df, dev_source_df, test_source_df, train_target_df, dev_target_df, test_target_df]:
@@ -83,8 +81,8 @@ def main():
     columns = ["review_body", "class"]
     train_source_dataset = dataframe2dataset(train_source_df, fields, columns)
     dev_source_dataset = dataframe2dataset(dev_source_df, fields, columns)
-    test_source_dataset = dataframe2dataset(test_source_df, fields, columns)
-    train_target_dataset = dataframe2dataset(train_target_df, fields, columns)
+    # test_source_dataset = dataframe2dataset(test_source_df, fields, columns)
+    # train_target_dataset = dataframe2dataset(train_target_df, fields, columns)
     dev_target_dataset = dataframe2dataset(dev_target_df, fields, columns)
     test_target_dataset = dataframe2dataset(test_target_df, fields, columns)
     all_train_dataset = dataframe2dataset(pd.concat([train_source_df, train_target_df]), fields, columns)
@@ -96,15 +94,15 @@ def main():
     else:
         text_field.build_vocab(all_train_dataset, min_freq=1)
 
-    # データセット作成
+    # データローダー作成
     train_source_iter = data.BucketIterator(dataset=train_source_dataset, batch_size=params["batch_size"], train=True)
     dev_source_iter = data.BucketIterator(
         dataset=dev_source_dataset, batch_size=params["batch_size"], train=False, sort=False
     )
-    test_source_iter = data.BucketIterator(
-        dataset=test_source_dataset, batch_size=params["batch_size"], train=False, sort=False
-    )
-    train_target_iter = data.BucketIterator(dataset=train_target_dataset, batch_size=params["batch_size"], train=True)
+    # test_source_iter = data.BucketIterator(
+    #     dataset=test_source_dataset, batch_size=params["batch_size"], train=False, sort=False
+    # )
+    # train_target_iter = data.BucketIterator(dataset=train_target_dataset, batch_size=params["batch_size"], train=True)
     dev_target_iter = data.BucketIterator(
         dataset=dev_target_dataset, batch_size=params["batch_size"], train=False, sort=False
     )
@@ -157,53 +155,95 @@ def main():
         print(f"Dev Source Accuracy: {total_dev_accuracy / len(dev_source_iter):.2f}")
         print(f"Dev Source F1 Score: {total_dev_f1 / len(dev_source_iter):.2f}")
 
-    # targetで訓練
+    # ブートストラップで複数回実行する
     print("\ntargetでFineTuning開始")
-    for epoch in range(params["epochs"]):
-        print(f"epoch {epoch+1} / {params['epochs']}")
-        total_loss = 0
+    # 事前学習したモデルを保持
+    # メモリを共有しないためにdeepcopyを使用する
+    model_pretrained = copy.deepcopy(model.cpu())
 
-        for i, batch in tqdm(enumerate(train_target_iter), total=len(train_target_iter)):
-            model.train()
+    accuracy_list = []
+    f1_list = []
 
-            x, y = batch.text[0].to(device), batch.label.to(device)
-            _, pred = model(x)
-            loss = criterion(pred, y)
+    for count in range(params["trial_count"]):
+        print(f"\n{count+1}回目の試行")
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.cpu()
-        print(f"Train Target Loss: {total_loss / len(train_target_iter):.3f}")
+        # targetでFineTuningする準備
+        # target_ratioで指定した比率までtargetのデータ数を減らす
+        train_target_df_sample = train_target_df.sample(target_num, replace=False)
 
-        total_dev_accuracy = 0
-        total_dev_f1 = 0
+        # targetのデータローダー作成
+        train_target_dataset = dataframe2dataset(train_target_df_sample, fields, columns)
+        train_target_iter = data.BucketIterator(
+            dataset=train_target_dataset, batch_size=params["batch_size"], train=True
+        )
+
+        # 事前学習したモデルをロード
+        model = copy.deepcopy(model_pretrained).to(device)
+        optimizer = getattr(torch.optim, params["optimizer"])(model.parameters(), lr=params["lr"])
+
+        # targetでFineTuning
+        for epoch in range(params["epochs"]):
+            print(f"\nepoch {epoch+1} / {params['epochs']}")
+            total_loss = 0
+
+            for i, batch in tqdm(enumerate(train_target_iter), total=len(train_target_iter)):
+                model.train()
+
+                x, y = batch.text[0].to(device), batch.label.to(device)
+                _, pred = model(x)
+                loss = criterion(pred, y)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.cpu()
+            print(f"Train Target Loss: {total_loss / len(train_target_iter):.3f}")
+
+            total_dev_accuracy = 0
+            total_dev_f1 = 0
+            model.eval()
+            for valid_batch in dev_target_iter:
+                x, y = valid_batch.text[0].to(device), valid_batch.label.to(device)
+                with torch.no_grad():
+                    _, pred = model(x)
+                label_array = y.cpu().numpy()
+                logit_array = pred.cpu().numpy()
+                total_dev_accuracy += calc_accuracy(label_array, logit_array)
+                total_dev_f1 += calc_f1(label_array, logit_array)
+            print(f"Dev Target Accuracy: {total_dev_accuracy / len(dev_target_iter):.2f}")
+            print(f"Dev Target F1 Score: {total_dev_f1 / len(dev_target_iter):.2f}")
+
+        total_test_accuracy = 0
+        total_test_f1 = 0
         model.eval()
-        for valid_batch in dev_target_iter:
-            x, y = valid_batch.text[0].to(device), valid_batch.label.to(device)
+        for test_batch in test_target_iter:
+            x, y = test_batch.text[0].to(device), test_batch.label.to(device)
             with torch.no_grad():
                 _, pred = model(x)
+
             label_array = y.cpu().numpy()
             logit_array = pred.cpu().numpy()
-            total_dev_accuracy += calc_accuracy(label_array, logit_array)
-            total_dev_f1 += calc_f1(label_array, logit_array)
-        print(f"Dev Target Accuracy: {total_dev_accuracy / len(dev_target_iter):.2f}")
-        print(f"Dev Target F1 Score: {total_dev_f1 / len(dev_target_iter):.2f}")
+            total_test_accuracy += calc_accuracy(label_array, logit_array)
+            total_test_f1 += calc_f1(label_array, logit_array)
 
-    total_test_accuracy = 0
-    total_test_f1 = 0
-    model.eval()
-    for test_batch in test_target_iter:
-        x, y = test_batch.text[0].to(device), test_batch.label.to(device)
-        with torch.no_grad():
-            _, pred = model(x)
+        test_accuracy = total_test_accuracy / len(test_target_iter)
+        test_f1 = total_test_f1 / len(test_target_iter)
+        accuracy_list.append(test_accuracy)
+        f1_list.append(test_f1)
+        print(f"\nTest Target Accuracy: {test_accuracy:.2f}")
+        print(f"Test Target F1 Score: {test_f1:.2f}")
 
-        label_array = y.cpu().numpy()
-        logit_array = pred.cpu().numpy()
-        total_test_accuracy += calc_accuracy(label_array, logit_array)
-        total_test_f1 += calc_f1(label_array, logit_array)
-    print(f"\nTest Target Accuracy: {total_test_accuracy / len(test_target_iter):.2f}")
-    print(f"Test Target F1 Score: {total_test_f1 / len(test_target_iter):.2f}")
+    accuracy_interval = stats.t.interval(
+        alpha=0.95, df=len(accuracy_list) - 1, loc=np.mean(accuracy_list), scale=stats.sem(accuracy_list)
+    )
+    f1_interval = stats.t.interval(alpha=0.95, df=len(f1_list) - 1, loc=np.mean(f1_list), scale=stats.sem(f1_list))
+    print("\n\t\tMean, Std, 95% interval (bottom, up)")
+    print(
+        f"Accuracy\t{np.mean(accuracy_list):.2f}, {np.std(accuracy_list, ddof=1):.2f}, {accuracy_interval[0]:.2f}, {accuracy_interval[1]:.2f}"
+    )
+    print(
+        f"F1 Score\t{np.mean(f1_list):.2f}, {np.std(f1_list, ddof=1):.2f}, {f1_interval[0]:.2f}, {f1_interval[1]:.2f}"
+    )
 
 
 if __name__ == "__main__":
