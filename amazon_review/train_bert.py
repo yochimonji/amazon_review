@@ -1,51 +1,100 @@
-import time
+import copy
+import random
 
+import numpy as np
 import pandas as pd
 import torch
+from scipy import stats
 from tqdm import tqdm
-from transformers import BertForSequenceClassification, BertTokenizer, get_linear_schedule_with_warmup
+from transformers import BertForSequenceClassification, BertTokenizer
 
-from util import calc_accuracy, calc_f1, format_time
+from util import calc_accuracy, calc_f1, init_device, load_params
 from util.bert import sentence_to_loader
 
 
-def train():
-    if torch.cuda.is_available():
-        # Tell PyTorch to use the GPU.
-        device = torch.device("cuda")
-        print("GPU available.")
-    else:
-        device = torch.device("cpu")
-        print("No GPU available, using the CPU instead.")
+def main():
+    # ランダムシード初期化
+    seed = 0
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    device = init_device()
+
+    # パラメータ読み込み
+    print("Loading parameters...")
+    params = load_params("/workspace/amazon_review/config/params_mmd.json")
+    params["batch_size"] = 8
 
     # データセット読み込み
-    en_train_df = pd.read_json("./data/dataset_en_train.json", orient="record", lines=True)
-    en_train_df = en_train_df.sample(n=1000, random_state=1)
-    en_dev_df = pd.read_json("./data/dataset_en_dev.json", orient="record", lines=True)
-    en_test_df = pd.read_json("./data/dataset_en_test.json", orient="record", lines=True)
-    print("Number of en_train_df:", en_train_df.shape[0])
-    print("Number of en_dev_df:", en_dev_df.shape[0])
-    print("Number of en_test_df:", en_test_df.shape[0])
+    train_df = pd.read_json(params["ja_train_path"], orient="record", lines=True)
+    if params["is_developing"]:
+        train_df = train_df.sample(n=200000, random_state=1)
+    dev_df = pd.read_json(params["ja_dev_path"], orient="record", lines=True)
+    test_df = pd.read_json(params["ja_test_path"], orient="record", lines=True)
+
+    # sourceカテゴリーとtargetカテゴリーを分ける
+    train_source_df = train_df[train_df["product_category"] == params["source_category"]]
+    dev_source_df = dev_df[dev_df["product_category"] == params["source_category"]]
+    test_source_df = test_df[test_df["product_category"] == params["source_category"]]
+    train_target_df = train_df[train_df["product_category"] == params["target_category"]]
+    dev_target_df = dev_df[dev_df["product_category"] == params["target_category"]]
+    test_target_df = test_df[test_df["product_category"] == params["target_category"]]
+
+    # クラスラベル設定
+    for df in [train_source_df, dev_source_df, test_source_df, train_target_df, dev_target_df, test_target_df]:
+        # 3以上かを予測する場合
+        df["class"] = 0
+        df["class"][df["stars"] > 3] = 1
+
+        # 5クラス分類する場合
+        # df["class"] = df["stars"] - 1
 
     # トークン化
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", do_lower_case=True)
+    model_name = "cl-tohoku/bert-base-japanese-v2"
+    tokenizer = BertTokenizer.from_pretrained(model_name, do_lower_case=True)
 
     # dataloader作成
-    batch_size = 4
-    train_dataloader = sentence_to_loader(
-        en_train_df.review_body.values, en_train_df.stars.values - 1, tokenizer, batch_size, shuffle=True
+    train_source_dataloader = sentence_to_loader(
+        train_source_df.review_body.values,
+        train_source_df["class"].values,
+        tokenizer,
+        params["batch_size"],
+        shuffle=True,
     )
-    dev_dataloader = sentence_to_loader(
-        en_dev_df.review_body.values, en_dev_df.stars.values - 1, tokenizer, batch_size, shuffle=False
+    dev_source_dataloader = sentence_to_loader(
+        dev_source_df.review_body.values, dev_source_df["class"].values, tokenizer, params["batch_size"], shuffle=False
     )
-    test_dataloader = sentence_to_loader(
-        en_test_df.review_body.values, en_test_df.stars.values - 1, tokenizer, batch_size, shuffle=False
+    # test_source_dataloader = sentence_to_loader(
+    #     test_source_df.review_body.values,
+    #     test_source_df["class"].values,
+    #     tokenizer,
+    #     params["batch_size"],
+    #     shuffle=False,
+    # )
+    train_target_dataloader = sentence_to_loader(
+        train_target_df.review_body.values,
+        train_target_df["class"].values,
+        tokenizer,
+        params["batch_size"],
+        shuffle=True,
+    )
+    # dev_target_dataloader = sentence_to_loader(
+    #     dev_target_df.review_body.values, dev_target_df["class"].values, tokenizer, params["batch_size"], shuffle=False
+    # )
+    test_target_dataloader = sentence_to_loader(
+        test_target_df.review_body.values,
+        test_target_df["class"].values,
+        tokenizer,
+        params["batch_size"],
+        shuffle=False,
     )
 
     # BERTモデル構築
     model = BertForSequenceClassification.from_pretrained(
-        "bert-base-uncased",
-        num_labels=5,
+        model_name,
+        num_labels=params["class_num"],
         output_attentions=False,
         output_hidden_states=False,
     )
@@ -55,13 +104,8 @@ def train():
     # 論文で推奨されているハイパーパラメータを使用
     optimizer = torch.optim.AdamW(model.parameters(), lr=6e-6, eps=1e-8)
     epochs = 3
-    total_steps = len(train_dataloader) * epochs
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
 
     # 訓練
-    training_stats = []
-    total_t0 = time.time()
-
     for epoch in range(epochs):
         print(f"\n======== Epoch {epoch+1} / {epochs} ========\nTraining")
 
@@ -69,7 +113,7 @@ def train():
         model.train()
 
         for step, (input_id_batch, input_mask_batch, label_batch) in tqdm(
-            enumerate(train_dataloader), total=len(train_dataloader)
+            enumerate(train_source_dataloader), total=len(train_source_dataloader)
         ):
             input_id_batch = input_id_batch.to(device).to(torch.int64)
             input_mask_batch = input_mask_batch.to(device).to(torch.int64)
@@ -81,10 +125,9 @@ def train():
             result.loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
-            scheduler.step()
 
-        avg_train_loss = total_train_loss / len(train_dataloader)
-        print(f"Average training loss: {avg_train_loss:.3f}")
+        avg_train_loss = total_train_loss / len(train_source_dataloader)
+        print(f"\n\tAverage training loss: {avg_train_loss:.2f}")
 
         # 検証データに対する予測
         print("\nRunning Validation")
@@ -94,7 +137,7 @@ def train():
         model.eval()
 
         for step, (input_id_batch, input_mask_batch, label_batch) in tqdm(
-            enumerate(dev_dataloader), total=len(dev_dataloader)
+            enumerate(dev_source_dataloader), total=len(dev_source_dataloader)
         ):
             input_id_batch = input_id_batch.to(device).to(torch.int64)
             input_mask_batch = input_mask_batch.to(device).to(torch.int64)
@@ -109,59 +152,126 @@ def train():
             total_dev_accuracy += calc_accuracy(label_array, logit_array)
             total_dev_f1 += calc_f1(label_array, logit_array)
 
-        avg_dev_loss = total_dev_loss / len(dev_dataloader)
-        print(f"Dev Loss: {avg_dev_loss:.3f}")
+        avg_dev_loss = total_dev_loss / len(dev_source_dataloader)
+        print(f"\tDev Loss: {avg_dev_loss:.3f}")
 
-        avg_dev_accuracy = total_dev_accuracy / len(dev_dataloader)
-        print(f"Accuracy: {avg_dev_accuracy:.3f}")
+        avg_dev_accuracy = total_dev_accuracy / len(dev_source_dataloader)
+        print(f"\tAccuracy: {avg_dev_accuracy:.3f}")
 
-        avg_dev_f1 = total_dev_f1 / len(dev_dataloader)
-        print(f"F1: {avg_dev_f1:.3f}")
+        avg_dev_f1 = total_dev_f1 / len(dev_source_dataloader)
+        print(f"\tF1: {avg_dev_f1:.3f}")
 
-        training_stats.append(
-            {
-                "epoch": epoch + 1,
-                "Training Loss": avg_train_loss,
-                "Dev Loss": avg_dev_loss,
-                "Dev Accuracy": avg_dev_accuracy,
-                "Dev F1": avg_dev_f1,
-            }
+    # ブートストラップで複数回実行する
+    print("\ntargetでFineTuning開始")
+    # 事前学習したモデルを保持
+    # メモリを共有しないためにdeepcopyを使用する
+    model_pretrained = copy.deepcopy(model.cpu())
+
+    params["target_ratio"] = [0.01, 0.05, 0.1, 0.3, 0.5]
+
+    for target_ratio in params["target_ratio"]:
+        print("------------------------------")
+        print(f"target_ratio = {target_ratio}")
+        print("------------------------------")
+
+        accuracy_list = []
+        f1_list = []
+
+        for count in range(params["trial_count"]):
+            print(f"\n{count+1}回目の試行")
+
+            # targetでFineTuningする準備
+            # target_ratioで指定した比率までtargetのデータ数を減らす
+            source_num = train_source_df.shape[0]
+            target_num = int(source_num * target_ratio)
+            if target_num > train_target_df.shape[0]:
+                print("Target ratio is too large.")
+                exit()
+            train_target_df_sample = train_target_df.sample(target_num, replace=False)
+            print(f"Source num: {source_num}, Target num: {target_num}")
+
+            # targetのデータローダー作成
+            train_target_dataloader = sentence_to_loader(
+                train_target_df_sample.review_body.values,
+                train_target_df_sample["class"].values,
+                tokenizer,
+                params["batch_size"],
+                shuffle=True,
+            )
+
+            # 事前学習したモデルをロード
+            model = copy.deepcopy(model_pretrained).to(device)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=6e-6, eps=1e-8)
+
+            # targetでFineTuning
+            for epoch in range(epochs):
+                print(f"======== Epoch {epoch+1} / {epochs} ========")
+
+                total_train_loss = 0
+                model.train()
+
+                for step, (input_id_batch, input_mask_batch, label_batch) in enumerate(train_target_dataloader):
+                    input_id_batch = input_id_batch.to(device).to(torch.int64)
+                    input_mask_batch = input_mask_batch.to(device).to(torch.int64)
+                    label_batch = label_batch.to(device).to(torch.int64)
+
+                    model.zero_grad()
+                    result = model(
+                        input_id_batch, token_type_ids=None, attention_mask=input_mask_batch, labels=label_batch
+                    )
+                    total_train_loss += result.loss.item()
+                    result.loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    optimizer.step()
+
+                avg_train_loss = total_train_loss / len(train_target_dataloader)
+                print(f"Training Target Loss: {avg_train_loss:.2f}")
+
+            # テスト
+            total_test_loss = 0
+            total_test_accuracy = 0
+            total_test_f1 = 0
+            model.eval()
+
+            for step, (input_id_batch, input_mask_batch, label_batch) in enumerate(test_target_dataloader):
+                input_id_batch = input_id_batch.to(device).to(torch.int64)
+                input_mask_batch = input_mask_batch.to(device).to(torch.int64)
+                label_batch = label_batch.to(device).to(torch.int64)
+
+                with torch.no_grad():
+                    result = model(
+                        input_id_batch, token_type_ids=None, attention_mask=input_mask_batch, labels=label_batch
+                    )
+
+                total_test_loss += result.loss.item()
+                logit_array = result.logits.detach().cpu().numpy()
+                label_array = label_batch.cpu().numpy()
+                total_test_accuracy += calc_accuracy(label_array, logit_array)
+                total_test_f1 += calc_f1(label_array, logit_array)
+
+            avg_test_loss = total_test_loss / len(test_target_dataloader)
+            print(f"\nTest Target Loss: {avg_test_loss:.2f}")
+
+            avg_test_accuracy = total_test_accuracy / len(test_target_dataloader)
+            accuracy_list.append(avg_test_accuracy)
+            print(f"Test Target Accuracy: {avg_test_accuracy:.2f}")
+
+            avg_test_f1 = total_test_f1 / len(test_target_dataloader)
+            f1_list.append(avg_test_f1)
+            print(f"Test Target F1: {avg_test_f1:.2f}")
+
+        accuracy_interval = stats.t.interval(
+            alpha=0.95, df=len(accuracy_list) - 1, loc=np.mean(accuracy_list), scale=stats.sem(accuracy_list)
         )
-
-    print("\nTraining complete!")
-    print(f"Total training took {format_time(time.time() - total_t0)} (h:mm:ss)")
-
-    print("\nPredicting")
-    total_test_loss = 0
-    total_test_accuracy = 0
-    total_test_f1 = 0
-    model.eval()
-
-    for step, (input_id_batch, input_mask_batch, label_batch) in tqdm(
-        enumerate(test_dataloader), total=len(test_dataloader)
-    ):
-        input_id_batch = input_id_batch.to(device).to(torch.int64)
-        input_mask_batch = input_mask_batch.to(device).to(torch.int64)
-        label_batch = label_batch.to(device).to(torch.int64)
-
-        with torch.no_grad():
-            result = model(input_id_batch, token_type_ids=None, attention_mask=input_mask_batch, labels=label_batch)
-
-        total_test_loss += result.loss.item()
-        logit_array = result.logits.detach().cpu().numpy()
-        label_array = label_batch.cpu().numpy()
-        total_test_accuracy += calc_accuracy(label_array, logit_array)
-        total_test_f1 += calc_f1(label_array, logit_array)
-
-    avg_test_loss = total_test_loss / len(test_dataloader)
-    print(f"Test Loss: {avg_test_loss:.3f}")
-
-    avg_test_accuracy = total_test_accuracy / len(test_dataloader)
-    print(f"Accuracy: {avg_test_accuracy:.3f}")
-
-    avg_test_f1 = total_test_f1 / len(test_dataloader)
-    print(f"F1: {avg_test_f1:.3f}")
+        f1_interval = stats.t.interval(alpha=0.95, df=len(f1_list) - 1, loc=np.mean(f1_list), scale=stats.sem(f1_list))
+        print("\n\t\tMean, Std, 95% interval (bottom, up)")
+        print(
+            f"Accuracy\t{np.mean(accuracy_list):.2f}, {np.std(accuracy_list, ddof=1):.2f}, {accuracy_interval[0]:.2f}, {accuracy_interval[1]:.2f}"
+        )
+        print(
+            f"F1 Score\t{np.mean(f1_list):.2f}, {np.std(f1_list, ddof=1):.2f}, {f1_interval[0]:.2f}, {f1_interval[1]:.2f}"
+        )
 
 
 if __name__ == "__main__":
-    train()
+    main()
